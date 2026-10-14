@@ -1,181 +1,453 @@
-Resumão Nmap — Anotações TryHackMe
-Este é o resumo dos principais conceitos que estudamos: estados de portas, flags TCP, descoberta de hosts, tipos de scan e ajustes de velocidade. Organizei em formato de anotação para você salvar no seu repositório de estudos de Cybersecurity.
-1. O que é o Nmap?
-O Nmap (Network Mapper) é uma ferramenta usada para descobrir hosts ativos em uma rede, identificar portas abertas e, dependendo das opções utilizadas, detectar serviços e suas versões.
-Exemplo básico:
+[nmap-resumao.md](https://github.com/user-attachments/files/33441845/nmap-resumao.md)
+# 🛰️ Resumão Nmap & Scanning de Portas
+
+> Anotações de estudo (TryHackMe + complementos) para o repositório de Cybersecurity.
+>
+> ⚠️ **Use apenas em laboratórios (TryHackMe, HackTheBox, VMs próprias) ou em sistemas para os quais você tenha autorização por escrito.** Escanear redes sem permissão pode ser crime.
+
+---
+
+## 📑 Índice
+
+1. [O que é o Nmap](#1-o-que-é-o-nmap)
+2. [Estados das portas](#2-estados-das-portas)
+3. [Flags TCP e 3-way handshake](#3-flags-tcp-e-3-way-handshake)
+4. [Tipos de varredura](#4-tipos-de-varredura)
+5. [Descoberta de hosts](#5-descoberta-de-hosts)
+6. [Escolhendo as portas](#6-escolhendo-as-portas)
+7. [Velocidade e temporização](#7-velocidade-e-temporização)
+8. [Serviços, versões e SO](#8-serviços-versões-e-so)
+9. [NSE – Nmap Scripting Engine](#9-nse--nmap-scripting-engine)
+10. [Salvando resultados](#10-salvando-resultados)
+11. [Firewall e evasão (conceitos)](#11-firewall-e-evasão-conceitos)
+12. [Fluxo de trabalho recomendado](#12-fluxo-de-trabalho-recomendado)
+13. [Cheat sheet final](#13-cheat-sheet-final)
+14. [Erros comuns](#14-erros-comuns)
+
+---
+
+## 1. O que é o Nmap
+
+**Nmap (Network Mapper)** é uma ferramenta para:
+
+- descobrir **hosts ativos** em uma rede;
+- identificar **portas abertas**;
+- detectar **serviços e versões**;
+- estimar o **sistema operacional**;
+- rodar **scripts** de enumeração e verificação (NSE).
+
+```bash
 nmap 10.10.10.10
+```
 
+📌 Por padrão, o Nmap verifica as **1.000 portas TCP mais comuns** (não todas as 65.535).
 
-Por padrão, o Nmap verifica as 1.000 portas TCP mais comuns.
-2. Estados das portas
-Os seis estados que você precisa conhecer:
+---
+
+## 2. Estados das portas
+
 | Estado | Significado |
 |---|---|
-| open | Existe um serviço aceitando conexões naquela porta. |
-| closed | A porta responde, mas não há serviço aceitando conexões nela. |
-| filtered | Um firewall ou outro filtro impede determinar se está aberta ou fechada. |
-| unfiltered | A porta é acessível à sondagem, mas não foi possível determinar se está aberta. |
-| open|filtered | Não foi possível distinguir entre porta aberta e filtrada. |
-| closed|filtered | Não foi possível distinguir entre porta fechada e filtrada. |
-Importante: uma porta closed não significa que o computador está desligado. Da mesma forma, não receber resposta não significa necessariamente que o host está offline.
-3. Flags TCP
-As flags são indicadores presentes nos pacotes TCP que controlam ou informam o estado de uma conexão.
-Flag	Função
-SYN	Inicia uma conexão TCP.
-ACK	Confirma o recebimento de dados ou a etapa de conexão.
-RST	Reinicia ou interrompe uma conexão.
-FIN	Indica que o emissor terminou de enviar dados.
-PSH	Solicita que os dados recebidos sejam entregues prontamente à aplicação.
-URG	Indica que o campo de ponteiro de urgência é relevante.
-TCP 3-way handshake
-É o processo normal de estabelecimento de uma conexão TCP:
-1. SYN
-Cliente solicita conexão.
+| `open` | Há um serviço aceitando conexões naquela porta. |
+| `closed` | A porta responde, mas nenhum serviço está escutando. |
+| `filtered` | Firewall/filtro impede saber se está aberta ou fechada (sem resposta). |
+| `unfiltered` | Porta alcançável, mas não dá para saber se está aberta ou fechada (típico do `-sA`). |
+| `open\|filtered` | Não foi possível distinguir entre aberta e filtrada. |
+| `closed\|filtered` | Não foi possível distinguir entre fechada e filtrada. |
 
-2. SYN/ACK
-Servidor responde.
+💡 **Importante**
+- Porta `closed` **não** significa host desligado: o host respondeu.
+- Falta de resposta **não** prova que o host está offline.
+- `filtered` costuma indicar **firewall** no caminho.
 
-3. ACK
-Cliente confirma; conexão estabelecida.
+---
 
+## 3. Flags TCP e 3-way handshake
 
-4. Tipos de varredura do Nmap
-Opção	Nome	Para que serve
--sT	TCP Connect Scan	Completa o handshake TCP para verificar portas.
--sS	SYN Scan	Usa SYN para verificar portas sem completar o handshake normalmente.
--sA	ACK Scan	Ajuda a analisar filtragem de portas e regras de firewall; não determina diretamente se uma porta está aberta.
--sF	FIN Scan	Envia pacotes com a flag FIN.
--sN	NULL Scan	Envia pacotes sem flags TCP definidas.
--sX	Xmas Scan	Envia pacotes com FIN, PSH e URG.
-Diferença essencial: -sT vs. -sS
--sT — conexão completa
-SYN → SYN/ACK → ACK
-O handshake é completado. O Nmap normalmente encerra a conexão em seguida.
+### Flags
 
--sS — SYN Scan
-SYN → SYN/ACK → RST
-Se a porta estiver aberta, o Nmap interrompe a tentativa sem enviar o ACK final do handshake.
+| Flag | Função |
+|---|---|
+| `SYN` | Inicia uma conexão. |
+| `ACK` | Confirma recebimento de dados ou de etapa da conexão. |
+| `RST` | Reinicia/interrompe a conexão. |
+| `FIN` | Indica que o emissor terminou de enviar dados. |
+| `PSH` | Pede entrega imediata dos dados à aplicação. |
+| `URG` | Indica que o ponteiro de urgência é relevante. |
 
+### 3-way handshake
 
-O -sT normalmente não exige privilégios elevados. O -sS geralmente exige root ou sudo para enviar pacotes brutos.
-Não confunda: -sS verifica portas TCP; não é a mesma coisa que dar ping.
-5. Descoberta de hosts ativos
-O objetivo aqui é descobrir quais computadores respondem na rede, sem necessariamente verificar todas as portas.
-Opção	Função
--sn	Faz descoberta de hosts sem realizar a varredura de portas.
--PR	Usa sondagens ARP para descoberta de hosts em redes Ethernet locais compatíveis.
--PS	Envia sondagens TCP SYN para descoberta de hosts.
--PA	Envia sondagens TCP ACK para descoberta de hosts.
--PU	Envia sondagens UDP para descoberta de hosts.
---reason	Mostra o motivo pelo qual o Nmap classificou um host ou uma porta daquele modo.
-Exemplos:
+```text
+Cliente                Servidor
+   |  ---- SYN ---->      |
+   |  <-- SYN/ACK ---     |
+   |  ---- ACK ---->      |
+   |   Conexão estabelecida
+```
+
+### Como o servidor responde a um SYN
+
+| Situação da porta | Resposta |
+|---|---|
+| Aberta | `SYN/ACK` |
+| Fechada | `RST` (ou `RST/ACK`) |
+| Filtrada | Nenhuma resposta ou erro ICMP |
+
+---
+
+## 4. Tipos de varredura
+
+| Opção | Nome | Para que serve |
+|---|---|---|
+| `-sT` | TCP Connect | Completa o handshake. Não exige root. |
+| `-sS` | SYN Scan ("half-open") | Envia SYN e interrompe com RST. Rápido; exige root. **Padrão com privilégios.** |
+| `-sU` | UDP Scan | Verifica portas UDP (lento). |
+| `-sA` | ACK Scan | Mapeia regras de firewall; **não** diz se a porta está aberta. |
+| `-sF` | FIN Scan | Envia pacotes com FIN. |
+| `-sN` | NULL Scan | Envia pacotes sem nenhuma flag. |
+| `-sX` | Xmas Scan | Envia FIN + PSH + URG. |
+
+### `-sT` vs `-sS`
+
+```text
+-sT:  SYN → SYN/ACK → ACK → (encerra conexão)
+-sS:  SYN → SYN/ACK → RST
+```
+
+| | `-sT` | `-sS` |
+|---|---|---|
+| Handshake completo | ✅ | ❌ |
+| Precisa de root/sudo | ❌ | ✅ (pacotes brutos) |
+| Aparece em logs de aplicação | Mais provável | Menos provável (mas ainda detectável por IDS/firewall) |
+| Quando usar | Sem privilégios | Padrão em pentest/CTF |
+
+> Sem root, o Nmap usa `-sT` automaticamente.
+
+### Como interpretar FIN / NULL / Xmas
+
+Esses scans exploram o comportamento da RFC do TCP:
+
+| Resposta | Interpretação |
+|---|---|
+| `RST` | Porta **closed** |
+| Sem resposta | Porta **open\|filtered** |
+| ICMP unreachable | Porta **filtered** |
+
+⚠️ Em **Windows** e alguns dispositivos, o comportamento foge da RFC (todas as portas respondem RST), então o resultado não é confiável.
+
+### Como interpretar o ACK Scan
+
+| Resposta | Estado |
+|---|---|
+| `RST` | `unfiltered` (o pacote passou pelo firewall) |
+| Sem resposta / ICMP | `filtered` |
+
+### Como interpretar o UDP Scan
+
+UDP não tem handshake, então:
+
+| Resposta | Estado |
+|---|---|
+| Resposta UDP | `open` |
+| ICMP *port unreachable* | `closed` |
+| Sem resposta | `open\|filtered` |
+
+📌 UDP é **lento** (muitos timeouts). Dica: combine com `--top-ports`.
+
+```bash
+sudo nmap -sU --top-ports 20 10.10.10.10
+```
+
+---
+
+## 5. Descoberta de hosts
+
+Descobrir **quem está vivo** sem varrer todas as portas.
+
+| Opção | Função |
+|---|---|
+| `-sn` | Descoberta de hosts **sem** port scan (antigo "ping scan"). |
+| `-PR` | Sondagem **ARP** (rede local Ethernet). |
+| `-PS` | Sondagem TCP **SYN**. |
+| `-PA` | Sondagem TCP **ACK**. |
+| `-PU` | Sondagem **UDP**. |
+| `-PE` | ICMP Echo (ping tradicional). |
+| `-Pn` | **Pula** a descoberta: trata todos os hosts como ativos. |
+| `-n` | Não faz resolução DNS (mais rápido). |
+| `--reason` | Mostra por que o Nmap classificou host/porta daquele jeito. |
+
+```bash
 nmap -sn 10.10.10.0/24
 nmap -sn --reason 10.10.10.0/24
 nmap -PS -sn 10.10.10.0/24
 sudo nmap -PU -sn 10.10.10.0/24
+nmap -sn -n 192.168.0.0/24
+```
 
+### Comportamento padrão do `-sn`
 
-Ping vs. SYN Scan
-- ping: normalmente usa ICMP para verificar se o host responde.
-- -sS: verifica portas TCP específicas.
-- -PS: usa sondagens TCP SYN para tentar descobrir hosts ativos.
-Um host pode bloquear ping e ainda ter portas TCP abertas. Por isso, não responder ao ping não prova que o host está offline.
-6. Escolhendo as portas
-Estas opções controlam quais portas serão verificadas.
-Opção	O que faz
--p22,80,443	Verifica somente as portas 22, 80 e 443.
--p20-25	Verifica as portas de 20 até 25, inclusive.
--p1-1023	Verifica as portas de 1 até 1023.
--p-	Verifica todas as 65.535 portas TCP, de 1 a 65.535.
--F	Verifica as 100 portas mais comuns.
---top-ports 10	Verifica as 10 portas mais comuns.
--r	Examina as portas em ordem numérica, em vez da ordem aleatória padrão.
-Exemplos:
+- **Rede local** (mesma sub-rede, com root): usa **ARP**.
+- **Rede remota**: usa ICMP Echo, TCP SYN na 443, TCP ACK na 80 e ICMP Timestamp.
+
+### Ping vs. SYN Scan vs. `-PS`
+
+| Ferramenta | O que faz |
+|---|---|
+| `ping` | Usa ICMP para ver se o host responde. |
+| `-sS` | Verifica portas TCP específicas. |
+| `-PS` | Usa SYN só para **descobrir hosts vivos**. |
+
+> Um host pode bloquear ping e ainda ter portas abertas. Se o host parece "morto" mas você suspeita que não está, use `-Pn`.
+
+---
+
+## 6. Escolhendo as portas
+
+| Opção | O que faz |
+|---|---|
+| `-p22,80,443` | Somente as portas listadas. |
+| `-p20-25` | Intervalo de 20 a 25 (inclusive). |
+| `-p1-1023` | Portas "well-known". |
+| `-p-` | **Todas** as 65.535 portas TCP. |
+| `-F` | As 100 portas mais comuns (modo *fast*). |
+| `--top-ports 10` | As 10 portas mais comuns. |
+| `-r` | Ordem numérica (padrão é ordem aleatória). |
+| `-p U:53,T:80` | Mistura portas UDP e TCP. |
+| `--open` | Mostra **apenas** portas abertas. |
+
+```bash
 nmap -sS -p22,80,443 10.10.10.10
-nmap -sS -p- 10.10.10.10
+sudo nmap -sS -p- 10.10.10.10
 nmap -sT -F 10.10.10.10
 nmap --top-ports 10 10.10.10.10
+```
 
+### Portas comuns para memorizar
 
-Portas comuns para memorizar
-Porta	Serviço normalmente associado
-21	FTP
-22	SSH
-25	SMTP
-53	DNS
-80	HTTP
-110	POP3
-143	IMAP
-443	HTTPS
-445	SMB
-3306	MySQL
-3389	RDP
-5432	PostgreSQL
-Essas associações são comuns, mas um serviço pode ser configurado para usar outra porta.
-7. Velocidade da varredura
-O parâmetro -T controla o perfil de temporização.
-Opção	Perfil	Característica
--T0	Paranoid	Extremamente lento.
--T1	Sneaky	Muito lento.
--T2	Polite	Mais cuidadoso.
--T3	Normal	Padrão do Nmap.
--T4	Aggressive	Mais rápido; comum em laboratórios e CTFs.
--T5	Insane	Muito agressivo; pode prejudicar a precisão.
-Exemplo:
+| Porta | Serviço | | Porta | Serviço |
+|---|---|---|---|---|
+| 21 | FTP | | 445 | SMB |
+| 22 | SSH | | 1433 | MSSQL |
+| 23 | Telnet | | 3050 | Firebird |
+| 25 | SMTP | | 3306 | MySQL |
+| 53 | DNS (TCP/UDP) | | 3389 | RDP |
+| 80 | HTTP | | 5432 | PostgreSQL |
+| 110 | POP3 | | 5900 | VNC |
+| 111 | RPCbind | | 6379 | Redis |
+| 135 | MS-RPC | | 8080 | HTTP alternativo |
+| 139 | NetBIOS | | 8443 | HTTPS alternativo |
+| 143 | IMAP | | 27017 | MongoDB |
+| 161 | SNMP (UDP) | | 1521 | Oracle |
+| 443 | HTTPS | | | |
+
+> Essas associações são **convenções**. Um serviço pode rodar em qualquer porta, por isso `-sV` é importante.
+
+---
+
+## 7. Velocidade e temporização
+
+### Perfis `-T`
+
+| Opção | Perfil | Característica |
+|---|---|---|
+| `-T0` | Paranoid | Extremamente lento (evasão de IDS). |
+| `-T1` | Sneaky | Muito lento. |
+| `-T2` | Polite | Gasta menos banda/CPU do alvo. |
+| `-T3` | Normal | **Padrão**. |
+| `-T4` | Aggressive | Rápido; comum em labs/CTFs com boa conexão. |
+| `-T5` | Insane | Muito agressivo; pode perder portas e causar instabilidade. |
+
+```bash
 nmap -sS -T4 10.10.10.10
+```
 
+> Um perfil lento **não** garante invisibilidade. Firewalls e IDS ainda podem detectar.
 
-Um perfil mais lento não garante invisibilidade. Firewalls e sistemas de monitoramento podem detectar as sondagens independentemente da velocidade.
-Taxa de envio e paralelização
-Opção	Função
---min-rate 100	Solicita uma taxa mínima de envio de aproximadamente 100 pacotes por segundo, quando possível.
---max-rate 10	Limita a taxa de envio a aproximadamente 10 pacotes por segundo.
---min-parallelism 10	Solicita pelo menos 10 sondagens simultâneas, quando possível.
---max-parallelism 20	Limita a paralelização a 20 sondagens simultâneas.
-Diferença importante:
-- Rate: quantidade de pacotes enviados por segundo.
-- Parallelism: quantidade de sondagens executadas simultaneamente.
-8. Serviços e versões
-Depois de encontrar portas abertas, você pode tentar identificar os serviços e suas versões:
+### Taxa e paralelização
+
+| Opção | Função |
+|---|---|
+| `--min-rate 100` | Pede mínimo de ~100 pacotes/s. |
+| `--max-rate 10` | Limita a ~10 pacotes/s. |
+| `--min-parallelism 10` | Mínimo de 10 sondagens simultâneas. |
+| `--max-parallelism 20` | Máximo de 20 sondagens simultâneas. |
+| `--max-retries 1` | Reduz retransmissões (mais rápido, menos preciso). |
+| `--host-timeout 5m` | Desiste de um host após 5 minutos. |
+
+- **Rate** = pacotes por segundo.
+- **Parallelism** = sondagens simultâneas.
+
+---
+
+## 8. Serviços, versões e SO
+
+| Opção | Função |
+|---|---|
+| `-sV` | Detecta serviço e **versão** nas portas abertas. |
+| `--version-intensity 0-9` | Define o esforço da detecção de versão. |
+| `-O` | Tenta detectar o **sistema operacional** (exige root). |
+| `-sC` | Roda os scripts NSE **default**. |
+| `-A` | Agressivo: `-sV` + `-O` + `-sC` + `traceroute`. |
+
+```bash
 nmap -sV 10.10.10.10
+sudo nmap -O 10.10.10.10
+sudo nmap -sS -sV -sC -p- 10.10.10.10
+sudo nmap -A 10.10.10.10
+```
 
+💡 Versão encontrada → pesquise CVEs e exploits (ex.: `searchsploit "OpenSSH 7.2"`).
 
-Para combinar descoberta de hosts, detecção de versões e varredura de portas, escolha as opções conforme o objetivo do teste. Não é necessário usar todas em toda varredura.
+---
 
-9. Exemplos práticos para guardar
-Use apenas em laboratórios ou sistemas para os quais você tenha autorização.
-Varredura básica
-nmap 10.10.10.10
+## 9. NSE – Nmap Scripting Engine
 
+Scripts em Lua para enumeração, detecção de vulnerabilidades e mais.
 
-Verifica as portas TCP mais comuns.
+| Opção | Função |
+|---|---|
+| `-sC` | Scripts da categoria `default`. |
+| `--script=<nome>` | Roda um script específico. |
+| `--script=<categoria>` | Roda uma categoria (`vuln`, `safe`, `discovery`, `auth`...). |
+| `--script-help=<nome>` | Mostra a ajuda do script. |
 
-SYN Scan nas portas mais comuns
-sudo nmap -sS 10.10.10.10
+```bash
+nmap --script=http-title -p80 10.10.10.10
+nmap --script=vuln 10.10.10.10
+nmap --script "smb-enum-*" -p445 10.10.10.10
+nmap --script=ftp-anon -p21 10.10.10.10
+```
 
+📂 Scripts ficam em `/usr/share/nmap/scripts/` (Linux).
 
-Usa SYN Scan nas portas padrão.
+```bash
+ls /usr/share/nmap/scripts | grep http
+```
 
-Verificar todas as portas TCP
-sudo nmap -sS -p- 10.10.10.10
+⚠️ Categorias como `intrusive`, `brute` e `dos` podem **derrubar serviços** ou gerar muito ruído. Cuidado.
 
+---
 
-Examina todas as portas TCP.
+## 10. Salvando resultados
 
-Verificar versões dos serviços
-nmap -sV 10.10.10.10
+| Opção | Formato |
+|---|---|
+| `-oN arquivo.txt` | Saída normal (legível). |
+| `-oX arquivo.xml` | XML (para ferramentas). |
+| `-oG arquivo.gnmap` | Grepable (legado). |
+| `-oA nome` | **Os três** de uma vez. |
+| `-v` / `-vv` | Mais verbosidade (mostra portas abertas em tempo real). |
+| `-d` | Modo debug. |
 
+```bash
+sudo nmap -sS -sV -p- -oA scan_alvo 10.10.10.10
+```
 
-Tenta identificar os serviços e suas versões.
+> Salve **sempre** os resultados. Rodar `-p-` de novo só porque esqueceu de salvar é perda de tempo.
 
-Descobrir hosts ativos em uma sub-rede
-nmap -sn 10.10.10.0/24
+---
 
+## 11. Firewall e evasão (conceitos)
 
-Faz descoberta de hosts sem varredura de portas.
+Para estudo e laboratório. Entender isso ajuda tanto no ataque quanto na defesa.
 
-Varredura mais rápida em laboratório
-sudo nmap -sS -p- -T4 10.10.10.10
+| Opção | Ideia |
+|---|---|
+| `-f` | Fragmenta os pacotes IP. |
+| `--mtu 16` | Define o tamanho dos fragmentos (múltiplo de 8). |
+| `-D RND:5` | Usa *decoys* (iscas) para misturar o IP real. |
+| `-S <ip>` | Falsifica o IP de origem (você não recebe a resposta). |
+| `--source-port 53` | Usa uma porta de origem específica. |
+| `--data-length 25` | Adiciona dados aleatórios aos pacotes. |
+| `-Pn` | Evita a descoberta quando ICMP é bloqueado. |
+| `-sA` | Ajuda a mapear regras de firewall. |
 
+📌 Nenhuma técnica torna você "invisível". IDS/IPS modernos detectam muitas dessas tentativas.
 
-Combina SYN Scan, todas as portas TCP e perfil de temporização T4.
+---
+
+## 12. Fluxo de trabalho recomendado
+
+```text
+1) Descobrir hosts vivos
+   nmap -sn 10.10.10.0/24
+
+2) Scan rápido de todas as portas
+   sudo nmap -sS -p- --min-rate 1000 -T4 -oN todas.txt 10.10.10.10
+
+3) Scan detalhado só nas portas abertas
+   sudo nmap -sS -sV -sC -p22,80,445 -oA detalhado 10.10.10.10
+
+4) Scripts específicos conforme o serviço
+   nmap --script=vuln -p80 10.10.10.10
+
+5) UDP nas principais portas
+   sudo nmap -sU --top-ports 20 10.10.10.10
+
+6) Documentar e pesquisar versões/CVEs
+```
+
+💡 Fazer o scan em duas etapas (rápido em todas as portas, depois detalhado nas abertas) economiza muito tempo.
+
+---
+
+## 13. Cheat sheet final
+
+```bash
+# Básico
+nmap <alvo>                              # 1000 portas TCP comuns
+nmap -sn <rede>/24                       # descobrir hosts
+nmap -Pn <alvo>                          # sem descoberta de host
+
+# Tipos de scan
+nmap -sT <alvo>                          # connect (sem root)
+sudo nmap -sS <alvo>                     # SYN
+sudo nmap -sU <alvo>                     # UDP
+sudo nmap -sA <alvo>                     # ACK (firewall)
+sudo nmap -sF|-sN|-sX <alvo>             # FIN / NULL / Xmas
+
+# Portas
+nmap -p22,80,443 <alvo>
+nmap -p- <alvo>                          # todas as 65535
+nmap -F <alvo>                           # top 100
+nmap --top-ports 20 <alvo>
+nmap --open <alvo>                       # só abertas
+
+# Informações
+nmap -sV <alvo>                          # versões
+sudo nmap -O <alvo>                      # SO
+sudo nmap -A <alvo>                      # tudo (agressivo)
+nmap -sC <alvo>                          # scripts default
+nmap --script=vuln <alvo>
+
+# Velocidade
+nmap -T4 <alvo>
+nmap --min-rate 1000 <alvo>
+
+# Saída
+nmap -oA resultado <alvo>
+nmap -v <alvo>
+nmap --reason <alvo>
+```
+
+---
+
+## 14. Erros comuns
+
+- ❌ Achar que `closed` = host offline → o host **respondeu**.
+- ❌ Achar que sem resposta ao ping = host morto → use `-Pn`.
+- ❌ Esquecer `-p-` e perder serviços em portas altas (o padrão só olha 1.000).
+- ❌ Usar `-sS`/`-O` sem `sudo` → o Nmap cai para `-sT` ou falha.
+- ❌ Confiar cegamente em `-sF/-sN/-sX` contra Windows.
+- ❌ Usar `-T5` e perder portas por pacotes descartados.
+- ❌ Não salvar a saída (`-oA`).
+- ❌ Escanear alvos sem autorização.
+
+---
+
+## 📚 Referências
+
+- [Documentação oficial do Nmap](https://nmap.org/book/man.html)
+- [Nmap Reference Guide](https://nmap.org/book/toc.html)
+- [TryHackMe – Nmap Rooms](https://tryhackme.com/)
+- [NSE Script Library](https://nmap.org/nsedoc/)
